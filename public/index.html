@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#070a0f">
+    <title>Червячки и жуки — Онлайн Мультиплеер</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap" rel="stylesheet">
+    <style>
+        * { user-select: none; -webkit-user-select: none; touch-action: none; box-sizing: border-box; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #070a0f; font-family: 'Russo One', sans-serif; }
+        .blue-gradient-text { background: linear-gradient(135deg, #00E5FF 0%, #0077FF 50%, #7000FF 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .cyan-btn { background: linear-gradient(180deg, #00E5FF 0%, #0055FF 100%); border: 2px solid #80F5FF; box-shadow: 0 4px 20px rgba(0, 229, 255, 0.4); transition: all 0.2s ease; }
+        .cyan-btn:hover { transform: translateY(-2px) scale(1.02); }
+        .dark-blue-panel { background: rgba(8, 14, 26, 0.94); border: 2px solid #0088FF; box-shadow: 0 0 30px rgba(0, 119, 255, 0.3); backdrop-filter: blur(12px); }
+        .hud-tl { top: 12px; left: 12px; }
+        .hud-tr { top: 12px; right: 12px; width: 180px; }
+        .hud-bl { bottom: 12px; left: 12px; }
+        .hud-br { bottom: 16px; right: 16px; }
+        #minimap { width: 90px; height: 90px; }
+        #mobileBoostBtn.pressed { transform: scale(0.9); filter: brightness(1.25); }
+    </style>
+</head>
+<body class="relative flex items-center justify-center min-h-screen">
+
+    <canvas id="gameCanvas" class="absolute inset-0 w-full h-full block cursor-crosshair"></canvas>
+
+    <!-- Главное Меню -->
+    <div id="mainMenu" class="absolute inset-0 flex items-center justify-center p-4 z-30 overflow-y-auto">
+        <div class="dark-blue-panel p-6 md:p-8 rounded-2xl max-w-md w-full text-center relative border-2 border-cyan-500">
+            <h1 class="text-3xl md:text-5xl font-black mb-1 blue-gradient-text tracking-wider uppercase">ЧЕРВЯЧКИ И ЖУКИ</h1>
+            <p class="text-xs md:text-sm text-cyan-400 mb-5 font-semibold tracking-widest uppercase">🌐 Онлайн Мультиплеер с Друзьями</p>
+
+            <div class="grid grid-cols-2 gap-2 bg-black/60 p-3 rounded-xl mb-4 border border-cyan-900/60 text-center">
+                <div>
+                    <span class="block text-[10px] text-cyan-500 uppercase">Жуки</span>
+                    <div class="text-lg font-bold text-emerald-400">🪲 <span id="menuBugs">0</span></div>
+                </div>
+                <div>
+                    <span class="block text-[10px] text-cyan-500 uppercase">Телефоны</span>
+                    <div class="text-lg font-bold text-blue-400">📱 <span id="menuPhones">0</span></div>
+                </div>
+            </div>
+
+            <div class="mb-4 text-left">
+                <label class="block text-xs text-cyan-400 uppercase mb-1">Имя червячка:</label>
+                <input type="text" id="playerNameInput" maxlength="14" value="Сетевой Червь" 
+                    class="w-full bg-black/70 border border-cyan-600 rounded-lg py-2 px-4 text-center text-cyan-100 focus:outline-none focus:ring-2 focus:ring-cyan-400">
+            </div>
+
+            <div class="flex flex-col gap-3">
+                <button onclick="startOnlineGame()" class="cyan-btn text-black font-black text-xl py-3 rounded-xl uppercase tracking-wider">
+                    🌐 Войти в Онлайн бой
+                </button>
+                <button onclick="openShop()" class="bg-blue-950/80 hover:bg-blue-900 text-cyan-300 border border-cyan-600 font-bold py-2.5 rounded-xl text-sm transition">
+                    🛒 Магазин Раскрасок
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Магазин -->
+    <div id="shopModal" class="absolute inset-0 flex items-center justify-center p-4 z-40 hidden bg-black/85 backdrop-blur-md">
+        <div class="dark-blue-panel p-6 rounded-2xl max-w-lg w-full max-h-[85vh] flex flex-col border-2 border-cyan-500">
+            <div class="flex justify-between items-center mb-4 pb-2 border-b border-cyan-800">
+                <h2 class="text-2xl font-black blue-gradient-text uppercase">Магазин Раскрасок</h2>
+                <div class="flex items-center gap-3 text-sm font-bold">
+                    <span class="text-emerald-400">🪲 <span id="shopBugs">0</span></span>
+                    <span class="text-blue-400">📱 <span id="shopPhones">0</span></span>
+                </div>
+            </div>
+            <div id="skinList" class="overflow-y-auto pr-1 grid grid-cols-1 gap-3 my-2 flex-grow"></div>
+            <button onclick="closeShop()" class="mt-4 cyan-btn text-black font-bold py-2.5 rounded-xl w-full uppercase">Назад</button>
+        </div>
+    </div>
+
+    <!-- Игровой HUD -->
+    <div id="gameHud" class="absolute inset-0 pointer-events-none hidden z-10">
+        <div class="hud-tl absolute dark-blue-panel p-3 rounded-xl flex items-center gap-3 border border-cyan-600/80 pointer-events-auto">
+            <div>
+                <span class="text-[9px] text-cyan-400 uppercase block">Масса</span>
+                <span id="hudScore" class="text-xl font-black text-cyan-200">10</span>
+            </div>
+            <div class="h-7 w-px bg-cyan-800"></div>
+            <div>
+                <span class="text-[9px] text-cyan-400 uppercase block">Жуки</span>
+                <span id="hudBugs" class="text-lg font-black text-emerald-400">0</span>
+            </div>
+            <div class="h-7 w-px bg-cyan-800"></div>
+            <div>
+                <span class="text-[9px] text-cyan-400 uppercase block">Телефоны</span>
+                <span id="hudPhones" class="text-lg font-black text-blue-400">0</span>
+            </div>
+        </div>
+
+        <div class="hud-tr absolute dark-blue-panel p-3 rounded-xl border border-cyan-600/80 pointer-events-auto">
+            <h3 class="text-[11px] font-bold text-cyan-400 uppercase mb-1.5 border-b border-cyan-800 pb-1 text-center">Топ Игроков</h3>
+            <ol id="leaderboardList" class="text-[11px] space-y-1 text-cyan-100"></ol>
+        </div>
+
+        <!-- Мини-карта -->
+        <div class="hud-bl absolute dark-blue-panel p-1 rounded-xl border border-cyan-700 pointer-events-auto">
+            <canvas id="minimap" width="90" height="90" class="rounded-lg bg-black/80 block"></canvas>
+        </div>
+
+        <!-- Кнопка Турбо для телефонов -->
+        <div id="mobileBoostBtn" class="hud-br absolute w-20 h-20 rounded-full cyan-btn flex items-center justify-center text-black font-black text-[12px] uppercase shadow-2xl pointer-events-auto border-2 border-cyan-200">
+            Турбо
+        </div>
+    </div>
+
+    <!-- Меню Поражения -->
+    <div id="gameOverModal" class="absolute inset-0 flex items-center justify-center p-4 z-40 hidden bg-black/85 backdrop-blur-md">
+        <div class="dark-blue-panel p-6 rounded-2xl max-w-sm w-full text-center border-2 border-cyan-500">
+            <h2 class="text-3xl font-black text-cyan-400 uppercase tracking-wider mb-2">Поражение!</h2>
+            <p class="text-xs text-cyan-300 mb-4">Вы столкнулись с соперником</p>
+            <button onclick="location.reload()" class="cyan-btn text-black font-black py-3 rounded-xl uppercase w-full">В главное меню</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+
+        class SoundEngine {
+            constructor() { this.ctx = null; this.enabled = true; }
+            init() {
+                if (!this.ctx) { const AudioContext = window.AudioContext || window.webkitAudioContext; this.ctx = new AudioContext(); }
+                if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+            }
+            playItem(isPhone = false) {
+                if (!this.enabled || !this.ctx) return;
+                const now = this.ctx.currentTime, freqs = isPhone ? [650, 950, 1300] : [520, 780, 1040];
+                freqs.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator(), gain = this.ctx.createGain();
+                    osc.type = 'triangle'; osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0.1, now + idx * 0.04);
+                    gain.gain.linearRampToValueAtTime(0.01, now + idx * 0.04 + 0.09);
+                    osc.connect(gain); gain.connect(this.ctx.destination);
+                    osc.start(now + idx * 0.04); osc.stop(now + idx * 0.04 + 0.09);
+                });
+            }
+        }
+        const audio = new SoundEngine();
+
+        const MAP_DIAMETER = 6700;
+        const WORLD_RADIUS = MAP_DIAMETER / 2;
+        const WORLD_CENTER = WORLD_RADIUS;
+
+        const SKINS = [
+            { id: '#4ADE80', name: 'Классический Зеленый', currency: 'bugs', price: 0, color: '#4ADE80' },
+            { id: '#00E5FF', name: 'Неоновый Синий', currency: 'bugs', price: 20, color: '#00E5FF' },
+            { id: '#D500F9', name: 'Плазменный Фиолет', currency: 'bugs', price: 40, color: '#D500F9' },
+            { id: '#FFD700', name: 'Царский Золотой', currency: 'phones', price: 25, color: '#FFD700' }
+        ];
+
+        let state = {
+            bugs: parseInt(localStorage.getItem('cw_bugs') || '0'),
+            phones: parseInt(localStorage.getItem('cw_phones') || '0'),
+            equippedSkin: localStorage.getItem('cw_skin') || '#4ADE80',
+            unlockedSkins: JSON.parse(localStorage.getItem('cw_unlocked') || '["#4ADE80"]'),
+            isPlaying: false
+        };
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const minimapCanvas = document.getElementById('minimap');
+        const minimapCtx = minimapCanvas.getContext('2d');
+
+        let viewW = window.innerWidth, viewH = window.innerHeight;
+        function resize() {
+            viewW = window.innerWidth; viewH = window.innerHeight;
+            canvas.width = viewW; canvas.height = viewH;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        let mousePos = { x: 0, y: 0 };
+        let isBoosting = false;
+        let serverState = { snakes: [], foods: [], bugs: [], phones: [] };
+
+        window.addEventListener('mousemove', (e) => {
+            mousePos.x = e.clientX - viewW / 2;
+            mousePos.y = e.clientY - viewH / 2;
+        });
+
+        // Ускорение на ПК (Пробел или клик левой кнопкой мыши по экрану)
+        window.addEventListener('keydown', (e) => { if (e.code === 'Space') isBoosting = true; });
+        window.addEventListener('keyup', (e) => { if (e.code === 'Space') isBoosting = false; });
+        window.addEventListener('mousedown', (e) => { if (e.button === 0 && state.isPlaying) isBoosting = true; });
+        window.addEventListener('mouseup', () => { isBoosting = false; });
+
+        // Ускорение на мобильных (Тач по экрану или кнопка Турбо)
+        const mobileBoostBtn = document.getElementById('mobileBoostBtn');
+        mobileBoostBtn.addEventListener('touchstart', (e) => { isBoosting = true; mobileBoostBtn.classList.add('pressed'); e.preventDefault(); });
+        mobileBoostBtn.addEventListener('touchend', (e) => { isBoosting = false; mobileBoostBtn.classList.remove('pressed'); e.preventDefault(); });
+
+        function startOnlineGame() {
+            audio.init();
+            document.getElementById('mainMenu').classList.add('hidden');
+            document.getElementById('gameHud').classList.remove('hidden');
+
+            const name = document.getElementById('playerNameInput').value || 'Сетевой Червь';
+            socket.emit('joinGame', { name: name, skinColor: state.equippedSkin });
+
+            state.isPlaying = true;
+            requestAnimationFrame(gameLoop);
+        }
+
+        socket.on('gameState', (data) => {
+            serverState = data;
+        });
+
+        socket.on('collectToken', (data) => {
+            if (data.type === 'bug') {
+                state.bugs++;
+                localStorage.setItem('cw_bugs', state.bugs);
+                audio.playItem(false);
+            } else {
+                state.phones++;
+                localStorage.setItem('cw_phones', state.phones);
+                audio.playItem(true);
+            }
+            document.getElementById('menuBugs').innerText = state.bugs;
+            document.getElementById('menuPhones').innerText = state.phones;
+        });
+
+        function gameLoop() {
+            if (!state.isPlaying) return;
+
+            const angle = Math.atan2(mousePos.y, mousePos.x);
+            socket.emit('playerInput', { angle: angle, isBoosting: isBoosting });
+
+            ctx.fillStyle = '#020408';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let me = serverState.snakes.find(s => s.id === socket.id);
+            let camX = me ? me.x : WORLD_CENTER;
+            let camY = me ? me.y : WORLD_CENTER;
+
+            ctx.save();
+            ctx.translate(viewW / 2, viewH / 2);
+            ctx.translate(-camX, -camY);
+
+            // Границы арены
+            ctx.strokeStyle = '#00E5FF';
+            ctx.lineWidth = 12;
+            ctx.beginPath();
+            ctx.arc(WORLD_CENTER, WORLD_CENTER, WORLD_RADIUS, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Еда
+            for (let f of serverState.foods) {
+                ctx.beginPath();
+                ctx.arc(f.x, f.y, 4, 0, Math.PI * 2);
+                ctx.fillStyle = '#00E5FF';
+                ctx.fill();
+            }
+
+            // Жуки и телефоны
+            if (serverState.bugs) {
+                for (let b of serverState.bugs) {
+                    ctx.font = '22px serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('🪲', b.x, b.y);
+                }
+            }
+            if (serverState.phones) {
+                for (let p of serverState.phones) {
+                    ctx.font = '22px serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('📱', p.x, p.y);
+                }
+            }
+
+            // Змейки игроков
+            for (let s of serverState.snakes) {
+                if (!s.segments || s.segments.length < 2) continue;
+                ctx.beginPath();
+                ctx.moveTo(s.segments[0].x, s.segments[0].y);
+                for (let seg of s.segments) ctx.lineTo(seg.x, seg.y);
+                ctx.lineWidth = s.radius * 2;
+                ctx.strokeStyle = s.skinColor || '#4ADE80';
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                ctx.fillStyle = '#FFF';
+                ctx.font = 'bold 12px "Russo One", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(s.name, s.x, s.y - s.radius - 12);
+
+                // Если активен защитный щит на спавне — рисуем красивый круг вокруг головы
+                if (s.spawnShield > 0) {
+                    ctx.save();
+                    ctx.strokeStyle = '#FFD700';
+                    ctx.lineWidth = 3;
+                    ctx.shadowColor = '#FFD700';
+                    ctx.shadowBlur = 10;
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, s.radius + 8, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+
+            ctx.restore();
+
+            if (me) {
+                document.getElementById('hudScore').innerText = Math.floor(me.mass);
+                document.getElementById('hudBugs').innerText = state.bugs;
+                document.getElementById('hudPhones').innerText = state.phones;
+            } else if (serverState.snakes.length > 0 && !me && state.isPlaying) {
+                state.isPlaying = false;
+                document.getElementById('gameOverModal').classList.remove('hidden');
+                document.getElementById('gameHud').classList.add('hidden');
+                return;
+            }
+
+            renderMinimap(me);
+            updateLeaderboard();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function renderMinimap(me) {
+            minimapCtx.clearRect(0, 0, 90, 90);
+            minimapCtx.fillStyle = '#0b0f19';
+            minimapCtx.beginPath();
+            minimapCtx.arc(45, 45, 43, 0, Math.PI * 2);
+            minimapCtx.fill();
+            minimapCtx.strokeStyle = '#00E5FF';
+            minimapCtx.lineWidth = 1;
+            minimapCtx.stroke();
+
+            const scale = 86 / (WORLD_RADIUS * 2);
+
+            if (me) {
+                minimapCtx.fillStyle = '#00E5FF';
+                minimapCtx.beginPath();
+                minimapCtx.arc(2 + me.x * scale, 2 + me.y * scale, 3.5, 0, Math.PI * 2);
+                minimapCtx.fill();
+            }
+
+            minimapCtx.fillStyle = 'rgba(0, 136, 255, 0.6)';
+            for (let s of serverState.snakes) {
+                if (s.id === socket.id) continue;
+                minimapCtx.beginPath();
+                minimapCtx.arc(2 + s.x * scale, 2 + s.y * scale, 2, 0, Math.PI * 2);
+                minimapCtx.fill();
+            }
+        }
+
+        function updateLeaderboard() {
+            const sorted = [...serverState.snakes].sort((a, b) => b.mass - a.mass).slice(0, 7);
+            const listEl = document.getElementById('leaderboardList');
+            listEl.innerHTML = '';
+            sorted.forEach((s, idx) => {
+                const li = document.createElement('li');
+                li.className = `flex justify-between items-center ${s.id === socket.id ? 'font-black text-cyan-300' : 'text-cyan-100'}`;
+                li.innerHTML = `<span>${idx + 1}. ${s.name}</span><span class="text-cyan-500">${Math.floor(s.mass)}</span>`;
+                listEl.appendChild(li);
+            });
+        }
+
+        function updateMenuUI() {
+            document.getElementById('menuBugs').innerText = state.bugs;
+            document.getElementById('menuPhones').innerText = state.phones;
+            document.getElementById('shopBugs').innerText = state.bugs;
+            document.getElementById('shopPhones').innerText = state.phones;
+        }
+
+        function openShop() {
+            const list = document.getElementById('skinList');
+            list.innerHTML = '';
+            SKINS.forEach(skin => {
+                const isUnlocked = state.unlockedSkins.includes(skin.id);
+                const isEquipped = state.equippedSkin === skin.id;
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-xl border flex items-center justify-between border-cyan-900 bg-black/60`;
+                card.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full border border-white/20 shadow" style="background:${skin.color}"></div>
+                        <span class="font-bold text-sm text-cyan-100">${skin.name}</span>
+                    </div>
+                    <div>
+                        ${isEquipped ? '<span class="text-xs text-cyan-300 font-bold uppercase">Надето</span>' :
+                          isUnlocked ? `<button onclick="equipSkin('${skin.id}')" class="px-3 py-1 text-xs font-bold rounded-lg bg-cyan-600 text-black">Надеть</button>` :
+                          `<button onclick="buySkin('${skin.id}', ${skin.price}, '${skin.currency}')" class="px-3 py-1 text-xs font-bold rounded-lg cyan-btn text-black">Купить (${skin.price})</button>`}
+                    </div>`;
+                list.appendChild(card);
+            });
+            document.getElementById('shopModal').classList.remove('hidden');
+        }
+
+        function closeShop() { document.getElementById('shopModal').classList.add('hidden'); updateMenuUI(); }
+        function equipSkin(id) { state.equippedSkin = id; localStorage.setItem('cw_skin', id); openShop(); }
+        function buySkin(id, price, currency) {
+            let bal = currency === 'bugs' ? state.bugs : state.phones;
+            if (bal >= price) {
+                if (currency === 'bugs') { state.bugs -= price; localStorage.setItem('cw_bugs', state.bugs); }
+                else { state.phones -= price; localStorage.setItem('cw_phones', state.phones); }
+                state.unlockedSkins.push(id); state.equippedSkin = id;
+                localStorage.setItem('cw_unlocked', JSON.stringify(state.unlockedSkins));
+                localStorage.setItem('cw_skin', id);
+                openShop();
+            }
+        }
+
+        updateMenuUI();
+    </script>
+</body>
+</html>
